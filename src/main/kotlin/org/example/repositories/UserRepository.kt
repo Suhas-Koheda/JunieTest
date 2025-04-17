@@ -8,23 +8,26 @@ import java.time.LocalDateTime
 import at.favre.lib.crypto.bcrypt.BCrypt
 
 class UserRepository {
-    
-    suspend fun createUser(userCreate: UserCreateDTO): User? {
+
+    suspend fun createUser(userCreate: UserCreateDTO, role: String? = null): User? {
         val passwordHash = hashPassword(userCreate.password)
-        
+
         val userId = dbQuery {
             Users.insert {
                 it[username] = userCreate.username
                 it[email] = userCreate.email
                 it[this.passwordHash] = passwordHash
+                if (role != null) {
+                    it[Users.role] = role
+                }
                 it[createdAt] = LocalDateTime.now()
                 it[updatedAt] = LocalDateTime.now()
             } get Users.id
         }
-        
+
         return userId?.value?.let { getUser(it) }
     }
-    
+
     suspend fun getUser(id: Int): User? {
         return dbQuery {
             Users.select { Users.id eq id }
@@ -32,7 +35,7 @@ class UserRepository {
                 .singleOrNull()
         }
     }
-    
+
     suspend fun getUserByEmail(email: String): User? {
         return dbQuery {
             Users.select { Users.email eq email }
@@ -40,7 +43,7 @@ class UserRepository {
                 .singleOrNull()
         }
     }
-    
+
     suspend fun getUserByUsername(username: String): User? {
         return dbQuery {
             Users.select { Users.username eq username }
@@ -48,14 +51,14 @@ class UserRepository {
                 .singleOrNull()
         }
     }
-    
+
     suspend fun getAllUsers(): List<User> {
         return dbQuery {
             Users.selectAll()
                 .mapNotNull { toUser(it) }
         }
     }
-    
+
     suspend fun updateUser(id: Int, userUpdate: UserUpdateDTO): User? {
         dbQuery {
             Users.update({ Users.id eq id }) {
@@ -64,36 +67,47 @@ class UserRepository {
                 it[updatedAt] = LocalDateTime.now()
             }
         }
-        
+
         return getUser(id)
     }
-    
+
+    suspend fun updateUserRole(id: Int, role: String): User? {
+        dbQuery {
+            Users.update({ Users.id eq id }) {
+                it[Users.role] = role
+                it[updatedAt] = LocalDateTime.now()
+            }
+        }
+
+        return getUser(id)
+    }
+
     suspend fun deleteUser(id: Int): Boolean {
         val deletedRows = dbQuery {
             Users.deleteWhere { Users.id eq id }
         }
-        
+
         return deletedRows > 0
     }
-    
+
     suspend fun validateCredentials(email: String, password: String): User? {
         val user = getUserByEmail(email)
-        
+
         return if (user != null && verifyPassword(password, user.passwordHash)) {
             user
         } else {
             null
         }
     }
-    
+
     private fun hashPassword(password: String): String {
         return BCrypt.withDefaults().hashToString(12, password.toCharArray())
     }
-    
+
     private fun verifyPassword(password: String, passwordHash: String): Boolean {
         return BCrypt.verifyer().verify(password.toCharArray(), passwordHash).verified
     }
-    
+
     private fun toUser(row: ResultRow): User =
         User(
             id = row[Users.id].value,
@@ -104,7 +118,7 @@ class UserRepository {
             createdAt = row[Users.createdAt],
             updatedAt = row[Users.updatedAt]
         )
-    
+
     fun toUserDTO(user: User): UserDTO =
         UserDTO(
             userId = user.id,
